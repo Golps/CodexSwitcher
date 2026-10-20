@@ -1,0 +1,116 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to publish, like v1.0"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14   # Apple Silicon runner
+    env:
+      HAS_SIGNING_KEY: ${{ secrets.SIGNING_P12_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check publication privacy
+        run: |
+          mkdir -p "$RUNNER_TEMP/privacy-tools"
+          cd "$RUNNER_TEMP/privacy-tools"
+          case "$(uname -m)" in arm64) ARCH=arm64 ;; x86_64) ARCH=x64 ;; *) exit 1 ;; esac
+          ARCHIVE="gitleaks_8.30.1_darwin_${ARCH}.tar.gz"
+          BASE="https://github.com/gitleaks/gitleaks/releases/download/v8.30.1"
+          curl --fail --location --retry 3 "$BASE/$ARCHIVE" -o "$ARCHIVE"
+          curl --fail --location --retry 3 "$BASE/gitleaks_8.30.1_checksums.txt" -o checksums.txt
+          awk -v archive="$ARCHIVE" '$2 == archive { print }' checksums.txt > expected.txt
+          test -s expected.txt
+          shasum -a 256 -c expected.txt
+          tar -xzf "$ARCHIVE" gitleaks
+          export PATH="$RUNNER_TEMP/privacy-tools:$PATH"
+          echo "$RUNNER_TEMP/privacy-tools" >> "$GITHUB_PATH"
+          cd "$GITHUB_WORKSPACE"
+          python3 scripts/check-privacy.py . --git-metadata --require-gitleaks
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s Tests -p PrivacyCheck.py
+      - name: Load signing certificate
+        if: env.HAS_SIGNING_KEY == 'true'
+        env:
+          SIGNING_P12_BASE64: ${{ secrets.SIGNING_P12_BASE64 }}
+          SIGNING_P12_PASSWORD: ${{ secrets.SIGNING_P12_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          echo "$SIGNING_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/sign.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/sign.p12" -k "$KEYCHAIN" -P "$SIGNING_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/sign.p12"
+          echo "SIGN_IDENTITY=Codex Switcher Signing" >> "$GITHUB_ENV"
+          echo "SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+      - name: Check settings panel layout
+        run: |
+          xcrun swiftc -D DEBUG -parse-as-library -target arm64-apple-macos13.0 -o "$RUNNER_TEMP/check-settings" Sources/SettingsFooter.swift Sources/StatusPanelWindow.swift Tests/SettingsLayout.swift
+          "$RUNNER_TEMP/check-settings"
+      - name: Build app and disk image
+        run: ./scripts/build.sh --dmg
+      - name: Check the app bundle
+        run: |
+          APP="build/Codex Switcher.app"
+          lipo -archs "$APP/Contents/MacOS/CodexSwitcher" | grep -qx arm64
+          codesign --verify --verbose "$APP"
+          codesign -d -r- "$APP" 2>&1 | tail -1
+          if [ -n "${SIGN_IDENTITY:-}" ]; then codesign -d -r- "$APP" 2>&1 | grep -q "certificate leaf"; fi
+          plutil -lint "$APP/Contents/Info.plist"
+          python3 scripts/check-privacy.py "$APP" --require-gitleaks
+          hdiutil verify build/CodexSwitcher.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CodexSwitcher
+          path: build/CodexSwitcher.dmg
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.version != '' || (github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'Release v'))
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: CodexSwitcher
+          path: build
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version || github.ref_name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          if [ "$VERSION" = "main" ]; then
+            VERSION="v$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+            test "$COMMIT_MESSAGE" = "Release $VERSION"
+          fi
+          APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          test "$VERSION" = "v$APP_VERSION"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq '.object.sha')"
+            TAG_TYPE="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq '.object.type')"
+            if [ "$TAG_TYPE" = tag ]; then
+              TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$TAG_SHA" --jq '.object.sha')"
+            fi
+            test "$TAG_SHA" = "$GITHUB_SHA"
+            echo "This commit already has a release; preserving its reviewed assets."
+            exit 0
+          fi
+          gh release create "$VERSION" build/CodexSwitcher.dmg --target "$GITHUB_SHA" --title "Codex Switcher $VERSION" --generate-notes

@@ -1,0 +1,21 @@
+build/
+.DS_Store
+/work/
+/Release/
+
+# Private working material never belongs in the repository or release.
+/HANDOFF.md
+/.env
+/.env.*
+!/.env.example
+*.p12
+*.pfx
+*.pem
+*.key
+auth.json
+credentials.json
+
+# Local release-signing material
+/.private/
+__pycache__/
+*.py[cod]
