@@ -178,24 +178,27 @@ struct MenuView: View {
         return [account.email, plan].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    /// A readable name for ChatGPT's internal plan code, such as
-    /// "self_serve_business_prolite" → "Business". Codes it doesn't know are left
-    /// out rather than shown raw.
+    /// The plan name Codex's own /status shows for ChatGPT's internal plan code
+    /// (from openai/codex, tui/src/subscription.rs), so "self_serve_business_prolite"
+    /// reads "Business Premium". Codes Codex doesn't name are left out.
     static func planName(_ code: String) -> String {
-        let code = code.lowercased()
-        switch code {
-        case "free", "free_workspace": return "Free"
+        switch code.lowercased() {
+        case "free": return "Free"
         case "go": return "Go"
         case "plus": return "Plus"
-        case "pro": return "Pro"
-        case "prolite": return "Pro Lite"
-        case "promax": return "Pro Max"
-        case "team": return "Team"
-        default:
-            if code.contains("business") { return "Business" }
-            if code.contains("enterprise") || code == "ent26" { return "Enterprise" }
-            if code.hasPrefix("edu") || code == "education" || code == "k12" { return "Edu" }
-            return ""
+        case "pro": return "Pro 200"
+        case "prolite": return "Pro 100"
+        case "promax": return "Pro 500"
+        case "team", "self_serve_business_usage_based": return "Business"
+        case "self_serve_business_prolite": return "Business Premium"
+        case "business", "enterprise", "hc", "ent26", "enterprise_cbp_usage_based": return "Enterprise"
+        case "enterprise_cbp_automation": return "Enterprise (Automation)"
+        case "edu", "education": return "Edu"
+        case "edu_plus": return "Edu Plus"
+        case "edu_pro": return "Edu Pro"
+        case "sci": return "Academic Researchers"
+        case "sci_plus": return "Academic Researchers Plus"
+        default: return ""
         }
     }
 
