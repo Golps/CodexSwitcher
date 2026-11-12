@@ -26,6 +26,7 @@ final class AppModel: ObservableObject {
     func refresh() {
         opensAtLogin = SMAppService.mainApp.status == .enabled
         do {
+            if self.store == nil { explainKeychainPromptAfterUpdate() }
             let store = try self.store ?? AccountStore()
             self.store = store
             usesFileStore = CodexConfig.usesFileStore(codexHome: store.codexHome)
@@ -193,46 +194,29 @@ final class AppModel: ObservableObject {
             }
             guard confirm("Codex Switcher \(release.version) is available",
                           "You have \(Updater.currentVersion). Install it now? The old version goes to the Trash and "
-                          + "Codex Switcher reopens. macOS will ask for Keychain access again; click Always Allow.",
+                          + "Codex Switcher reopens and explains the one Keychain prompt that follows.",
                           ok: "Install and Relaunch") else { return }
             busy = "Updating…"
             try await Updater.install(release)
-        } catch UpdateError.noAccess {
-            if Updater.token != nil {
-                Keychain.delete(Updater.tokenItem)
-                errorMessage = "GitHub didn't accept the saved token. Check for Updates again to enter a new one."
-            } else if askForToken() {
-                checkingForUpdates = false
-                await checkForUpdates()
-            }
         } catch {
             busy = nil
             errorMessage = error.localizedDescription
         }
     }
 
-    /// Asks once for a read-only GitHub token, needed only while the repo is private.
-    private func askForToken() -> Bool {
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "GitHub token needed"
-        alert.informativeText = "Codex Switcher's repo is private, so checking for updates needs a GitHub token "
-            + "with read-only access to its contents. Create one at github.com → Settings → Developer settings → "
-            + "Fine-grained tokens, limited to the CodexSwitcher repo with Contents: Read-only. It's kept in your Keychain."
-        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        field.placeholderString = "github_pat_…"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return false }
-        let entered = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !entered.isEmpty else { return false }
-        do { try Keychain.write(Data(entered.utf8), Updater.tokenItem) } catch {
-            errorMessage = error.localizedDescription
-            return false
-        }
-        return true
+    /// macOS asks for your login password the first time a new version opens its
+    /// Keychain item, which can look alarming. Says beforehand what the request is.
+    private func explainKeychainPromptAfterUpdate() {
+        let defaults = UserDefaults.standard
+        let current = Updater.currentVersion
+        let last = defaults.string(forKey: "lastLaunchedVersion")
+        defaults.set(current, forKey: "lastLaunchedVersion")
+        guard last != current, Keychain.exists() else { return }
+        inform("Codex Switcher was updated",
+               "macOS will now ask for your login password so this app can open its own saved accounts, "
+               + "kept in the \"Codex Switcher saved accounts\" item in your Keychain. That item only ever holds "
+               + "logins you added here, and nothing in it leaves your Mac except to sign in to ChatGPT. "
+               + "Click Always Allow so it doesn't ask again until the next update.")
     }
 
     private func inform(_ title: String, _ detail: String) {

@@ -7,8 +7,6 @@ import Foundation
 enum Updater {
     private static let repo = "Golps/CodexSwitcher"
     private static let assetName = "CodexSwitcher.dmg"
-    /// Optional read-only GitHub token, for when the repo is private.
-    static let tokenItem = "github-token"
 
     struct Release {
         let version: String
@@ -19,9 +17,6 @@ enum Updater {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
-    static var token: String? {
-        (try? Keychain.read(tokenItem)).flatMap { String(data: $0, encoding: .utf8) }
-    }
 
     /// The newest release if it's newer than this copy, otherwise nil.
     static func check() async throws -> Release? {
@@ -95,7 +90,6 @@ enum Updater {
         var request = URLRequest(url: url)
         request.setValue(accept, forHTTPHeaderField: "Accept")
         request.setValue("CodexSwitcher/\(currentVersion)", forHTTPHeaderField: "User-Agent")
-        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         return request
     }
 
@@ -131,7 +125,7 @@ enum UpdateError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noAccess:
-            return "Couldn't reach Codex Switcher's releases. The repo is private, so the app needs a GitHub token to check for updates."
+            return "Couldn't reach Codex Switcher's releases on GitHub. Try again later."
         case .badResponse:
             return "Couldn't download the update. Try again later, or download it from the releases page."
         case .cantWrite(let folder):

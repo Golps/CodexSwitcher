@@ -162,6 +162,8 @@ final class AccountStore {
 /// Generic-password items in the login Keychain, under the service "Codex Switcher".
 enum Keychain {
     private static let service = "Codex Switcher"
+    /// The name macOS shows in its Keychain prompt and in Keychain Access.
+    private static let label = "Codex Switcher saved accounts"
 
     private static func baseQuery(_ account: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
@@ -180,12 +182,20 @@ enum Keychain {
         return result as? Data
     }
 
+    /// Whether the item exists. Doesn't read its contents, so macOS doesn't prompt.
+    static func exists(_ account: String = "accounts") -> Bool {
+        var query = baseQuery(account)
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
+    }
+
     static func write(_ data: Data, _ account: String = "accounts") throws {
-        let status = SecItemUpdate(baseQuery(account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        let status = SecItemUpdate(baseQuery(account) as CFDictionary,
+                                   [kSecValueData as String: data, kSecAttrLabel as String: label] as CFDictionary)
         if status == errSecItemNotFound {
             var item = baseQuery(account)
             item[kSecValueData as String] = data
-            item[kSecAttrLabel as String] = "Codex Switcher"
+            item[kSecAttrLabel as String] = label
             let added = SecItemAdd(item as CFDictionary, nil)
             guard added == errSecSuccess else { throw KeychainError(status: added) }
         } else if status != errSecSuccess {

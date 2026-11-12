@@ -72,7 +72,7 @@ Usage is requested when the menu opens, with a minimum five-second interval betw
 
 ## Privacy and account storage
 
-- Saved logins are kept in the **Codex Switcher** item in your macOS login Keychain.
+- Saved logins are kept in the **Codex Switcher saved accounts** item in your macOS login Keychain.
 - Switching writes the chosen login to Codex’s local `~/.codex/auth.json` file. The outgoing login is retained in the local Keychain store.
 - Account credentials are sent to OpenAI when needed for sign-in, refresh, and usage requests. They are not sent to this project’s GitHub repository.
 - GitHub is contacted to check for and download application updates.
@@ -84,7 +84,7 @@ Because Codex Switcher manages account credentials, only run builds and source y
 
 ## Troubleshooting
 
-**macOS asks for Keychain access.** Approve access only for the app you installed and trust. macOS may ask again after an update, including when the signing identity changes.
+**macOS asks for Keychain access.** After each update, macOS asks for your login password once so the new version can open its saved accounts. Codex Switcher tells you just before this happens. Click **Always Allow**, and approve only the app you installed and trust.
 
 **Codex uses Keychain login instead of a file.** The menu offers **Use File Login** when it detects this configuration. You may need to sign in to Codex again afterward.
 
@@ -94,9 +94,8 @@ Because Codex Switcher manages account credentials, only run builds and source y
 
 **Another sign-in is already running.** Finish or close any `codex login` session before using **Add Account…**; both use the same local callback port.
 
-**The update checker asks for a GitHub token.** The public repository should not require one. This prompt exists for private-repository access; do not paste an OpenAI key into it.
 
-**Remove the app.** Quit it, disable **Open at Login** if enabled, and move the app to the Trash. To remove its saved account vault as well, delete the **Codex Switcher / accounts** item in Keychain Access. This does not sign Codex out of its current local login.
+**Remove the app.** Quit it, disable **Open at Login** if enabled, and move the app to the Trash. To remove its saved account vault as well, delete the **Codex Switcher saved accounts** item in Keychain Access. This does not sign Codex out of its current local login.
 
 ## Build and maintain
 
