@@ -173,9 +173,30 @@ struct MenuView: View {
     private static let wideButtonWidth: CGFloat = 140
 
     private func subtitle(_ account: Account) -> String {
-        let plan = account.plan.isEmpty ? "" : account.plan.capitalized
+        let plan = Self.planName(account.plan)
         if account.label == account.email { return plan.isEmpty ? "ChatGPT" : "ChatGPT \(plan)" }
         return [account.email, plan].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    /// A readable name for ChatGPT's internal plan code, such as
+    /// "self_serve_business_prolite" → "Business". Codes it doesn't know are left
+    /// out rather than shown raw.
+    static func planName(_ code: String) -> String {
+        let code = code.lowercased()
+        switch code {
+        case "free", "free_workspace": return "Free"
+        case "go": return "Go"
+        case "plus": return "Plus"
+        case "pro": return "Pro"
+        case "prolite": return "Pro Lite"
+        case "promax": return "Pro Max"
+        case "team": return "Team"
+        default:
+            if code.contains("business") { return "Business" }
+            if code.contains("enterprise") || code == "ent26" { return "Enterprise" }
+            if code.hasPrefix("edu") || code == "education" || code == "k12" { return "Edu" }
+            return ""
+        }
     }
 
     // MARK: Panels
